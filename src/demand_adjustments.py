@@ -20,7 +20,8 @@ def prepare_stockout_history(data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("stockout_days must be whole days between zero and calendar-month length")
     result["stockout_data_available"] = known
     result["stockout_days"] = days.fillna(0).astype(int)
-    result["is_stockout"] = result["stockout_days"] > 0
+    possible = result.get("possible_stockout", pd.Series(False, index=result.index)).fillna(False).astype(bool)
+    result["is_stockout"] = (result["stockout_days"] > 0) | possible
     if ((result["stockout_days"] == result["period_days"]) & (result["sales"] > 0)).any():
         raise ValueError("A full-month stockout cannot have positive sales")
     return result
@@ -41,6 +42,8 @@ def compensate_stockouts(audit: pd.DataFrame) -> pd.DataFrame:
     result["stockout_daily_rate"] = np.nan
     result["stockout_comparators"] = 0
     result["stockout_method"] = "not_needed"
+    if not result["is_stockout"].any():
+        return result
     for _, group in result.groupby("sku", sort=False):
         peers = group.loc[~group["is_stockout"] & ~group["is_anomaly"]]
         for index, period in group.loc[group["is_stockout"]].iterrows():
@@ -57,13 +60,19 @@ def compensate_stockouts(audit: pd.DataFrame) -> pd.DataFrame:
                 rate = float((comparable["sales"] / comparable["period_days"]).median())
             else:
                 available = period["period_days"] - period["stockout_days"]
-                if available >= 7 and not period["is_anomaly"]:
+                if period["stockout_data_available"] and available >= 7 and not period["is_anomaly"]:
                     rate = float(period["sales"] / available)
                     method = "own_available_days_fallback"
                 else:
                     rate = np.nan
                     method = "unresolved"
             lost = rate * period["stockout_days"]
+            if not period["stockout_data_available"] and period.get("possible_stockout", False):
+                # Snapshot evidence cannot establish outage duration. Use a flagged
+                # comparable-month estimate, not fictitious unavailable days.
+                lost = max(0.0, rate * period["period_days"] - period["sales"]) if np.isfinite(rate) else np.nan
+                if np.isfinite(rate):
+                    method = "inferred_zero_inventory_snapshot"
             result.loc[index, ["stockout_daily_rate", "stockout_comparators",
                                "stockout_method", "estimated_lost_demand", "adjusted_demand"]] = [
                 rate, len(comparable), method, lost, period["sales"] + lost,

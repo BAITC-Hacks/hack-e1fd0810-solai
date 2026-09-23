@@ -156,7 +156,9 @@ class DemandAdjustmentTests(unittest.TestCase):
         result = calculate_replenishment(summary, audit)
         text = explain_replenishment(result.set_index("sku").loc["BEV-220"])
         self.assertIn("Sustainable growth", text)
-        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        app = AppTest.from_file(str(ROOT / "app.py"))
+        app.session_state["data_source"] = "Synthetic demo"
+        app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         app.selectbox[1].select("SNK-440").run(timeout=30)
         self.assertEqual(len(app.exception), 0)

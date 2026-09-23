@@ -120,3 +120,25 @@ any adjustment a second time. Stockout rows, like anomalies, are excluded from
 safety-stock variability. Stockout estimates require REVIEW; unreliable estimates
 receive additional reason codes. Supplier proposals remain manager-reviewed,
 with no automatic sending or order-submission capability.
+
+## Partner workbook inputs
+
+The [partner adapter](partner_data_inspection.md) retains original monthly cells
+and signed document quantities. It subtracts isolated document spikes only on
+monthly reconciliation, before applying the existing monthly anomaly algorithm.
+The raw recent mean still uses original monthly sales. Both adjustment steps
+remain auditable. Missing and negative net months do not become zero demand.
+
+Provided brand-level seasonal profiles take priority when reliably mapped; the
+same target-index/baseline-index normalization applies. The existing SKU/category
+history calculation remains available when no supplied profile can be used.
+
+Only explicit zero historical inventory can support possible-stockout inference.
+With unknown outage days, estimate the positive gap between comparable monthly
+demand and observed sales, flag it for review, and never invent duration. Missing
+inventory alone produces no inference. The supplied monthly stock files contain
+no explicit zero snapshots. Their blank cells do not establish stockouts.
+
+Forecast origin is September 2026 for the dated partner snapshot; September sales
+are partial and excluded from fitting. All earlier source documents remain in
+the audit, including pre-2024 documents outside the normalized monthly grid.

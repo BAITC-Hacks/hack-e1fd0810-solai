@@ -36,7 +36,7 @@ def _seasonal_profile(history: pd.DataFrame):
     return pd.concat(years, axis=1).median(axis=1) if len(years) >= 2 else None
 
 
-def forecast_demand(data: pd.DataFrame, recent_months: int = 6):
+def forecast_demand(data: pd.DataFrame, recent_months: int = 6, seasonal_profiles=None, forecast_month=None):
     """Return (SKU summary, full history with anomaly audit flags).
 
     Raw demand is the recent mean including spikes; baseline is the recent
@@ -53,15 +53,17 @@ def forecast_demand(data: pd.DataFrame, recent_months: int = 6):
     rows = []
     for sku, history in audit.groupby("sku", sort=True):
         latest = history.iloc[-1]
-        last_month = latest["date"].to_period("M")
+        last_month = (pd.Timestamp(forecast_month).to_period("M") - 1
+                      if forecast_month is not None else latest["date"].to_period("M"))
         recent = history.loc[history["date"].dt.to_period("M") > last_month - recent_months]
         regular = recent.loc[~recent["is_anomaly"] & recent["adjusted_demand"].notna()]
         if regular.empty:
             regular = history.loc[~history["is_anomaly"] & history["adjusted_demand"].notna()].tail(recent_months)
         baseline = float(regular["adjusted_demand"].median()) if len(regular) else float("nan")
         sales_baseline = float(regular["sales"].median()) if len(regular) else float("nan")
-        profile = _seasonal_profile(history)
-        source = "sku" if profile is not None else "none"
+        supplied = (seasonal_profiles or {}).get(latest.get("brand"))
+        profile = pd.Series(supplied) if supplied else _seasonal_profile(history)
+        source = "partner_brand" if supplied else ("sku" if profile is not None else "none")
         if profile is None:
             peers = audit.loc[
                 (audit["category"] == latest["category"])
@@ -87,14 +89,14 @@ def forecast_demand(data: pd.DataFrame, recent_months: int = 6):
             **{key: latest[key] for key in ["product_name", "category", "supplier",
                                           "current_stock", "in_transit", "lead_time_days"]},
             "sku": sku, "baseline_demand": baseline,
-            "raw_demand_estimate": float(recent["sales"].mean()),
+            "raw_demand_estimate": float(recent.get("raw_sales", recent["sales"]).mean()),
             "seasonal_factor": factor, "forecast_demand": seasonal_forecast * growth["growth_factor"],
             "anomalies_detected": int(history["is_anomaly"].sum()),
             "baseline_anomalies_excluded": int(recent["is_anomaly"].sum()),
             "baseline_observations": len(regular), "forecast_month": target,
             "seasonal_source": source,
             "raw_sales_baseline": sales_baseline,
-            "anomaly_adjustment": sales_baseline - float(recent["sales"].mean()),
+            "anomaly_adjustment": sales_baseline - float(recent.get("raw_sales", recent["sales"]).mean()),
             "stockout_adjustment": baseline - sales_baseline,
             "stockout_periods": int(history["is_stockout"].sum()),
             "estimated_lost_demand": float(history["estimated_lost_demand"].sum(min_count=1)),
@@ -126,7 +128,17 @@ def explain_forecast(row: pd.Series, language: str = "en") -> str:
             unresolved=int(row["stockout_unresolved"]), fallback=int(row["stockout_fallback_periods"]),
         )
     if row["stockout_metadata_missing"]:
-        text += tr.get("ex_stockout_missing", TRANSLATIONS["en"]["ex_stockout_missing"])
+        if "possible_stockout_periods" not in row:
+            text += tr.get("ex_stockout_missing", TRANSLATIONS["en"]["ex_stockout_missing"])
+        else:
+            text += "Stockout duration is unavailable for some rows. Only explicit zero historical inventory can support a possible-stockout estimate; blank inventory is unknown. "
+    if "document_anomalies_detected" in row:
+        text += (f"{int(row['document_anomalies_detected'])} isolated document spike(s) were removed from reconciled monthly demand, "
+                 f"totalling {row['document_excluded_qty']:.1f} units; original documents remain in the audit. "
+                 f"{int(row['document_anomalies_unreconciled'])} other document flags could not be reconciled and require review. "
+                 "Customer-level detection is unavailable: no customer identifier was supplied. ")
+    if row.get("possible_stockout_periods", 0):
+        text += "Possible stockouts use comparable-month demand above observed sales, based on zero inventory snapshots; outage duration is unknown and manager review is required. "
     if row["seasonal_source"] == "none":
         text += tr["ex_no_season"]
     else:

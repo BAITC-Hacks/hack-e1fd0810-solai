@@ -10,6 +10,8 @@ def explain_replenishment(row: pd.Series, language: str = "en") -> str:
     """Explain formulas, fallback, adjustments and review conditions."""
     tr = TRANSLATIONS.get(language, TRANSLATIONS["en"])
     parts = [tr["ex_r1"].format(value=row["forecast_demand"])]
+    if "urgency" in row:
+        parts.append(f"Urgency: {row['urgency']}. {row['urgency_reason']}")
     if "growth_factor" in row:
         parts.append(explain_forecast(row, language))
     if pd.notna(row["recommended_order_qty"]):
@@ -20,12 +22,24 @@ def explain_replenishment(row: pd.Series, language: str = "en") -> str:
             tr["ex_safety"].format(factor=row["service_level_factor"], std=row["monthly_demand_std"], days=row["lead_time_days"], stock=row["safety_stock"], n=row["history_observations"])
         )
         parts.append(
-            tr["ex_inventory"].format(current=row["current_stock"], transit=row["in_transit"], position=row["inventory_position"], lead=row["lead_time_demand"], safety=row["safety_stock"], target=row["target_stock"], raw=row["raw_order_qty"], qty=int(row["recommended_order_qty"]))
+            tr["ex_inventory"].replace(
+                "(raw need rounded up, with a minimum of zero)", "(after upward rounding and any supplied order constraints)"
+            ).replace(
+                "(исходная потребность округлена вверх, минимум — ноль)", "(с округлением вверх и учётом ограничений поставщика)"
+            ).replace(
+                "(бастапқы қажеттілік жоғары қарай дөңгелектеледі, ең азы — нөл)", "(жоғары дөңгелектеу және жеткізуші шектеулері ескерілген)"
+            ).format(current=row["current_stock"], transit=row["in_transit"], position=row["inventory_position"], lead=row["lead_time_demand"], safety=row["safety_stock"], target=row["target_stock"], raw=row["raw_order_qty"], qty=int(row["recommended_order_qty"]))
         )
         if row["recommended_order_qty"] == 0:
             parts.append(tr["ex_zero"])
     else:
         parts.append(tr["ex_unavailable"])
+    if "moq_status" in row:
+        parts.append(f"Raw required quantity before order constraints: {row.get('raw_required_qty')}. "
+                     f"Minimum shipment: {row.get('minimum_order_qty')}; order multiple: {row.get('order_multiple')}. "
+                     f"MOQ availability: {row['moq_status']}. Missing or zero constraints do not change the quantity.")
+    if row.get("lead_time_source"):
+        parts.append(f"Lead-time source: {row['lead_time_source'].replace('_', ' ')}.")
     if row["safety_stock_method"] == "fallback_100pct_monthly":
         parts.append(tr["ex_fallback"])
     parts.append(tr["ex_anomaly"].format(detected=int(row["anomalies_detected"]), excluded=int(row["anomalies_excluded"])))

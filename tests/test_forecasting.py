@@ -116,7 +116,9 @@ class ForecastTests(unittest.TestCase):
         self.assertTrue(summary.forecast_demand.ge(0).all())
 
     def test_streamlit_renders_and_sku_selection_works(self):
-        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        app = AppTest.from_file(str(ROOT / "app.py"))
+        app.session_state["data_source"] = "Synthetic demo"
+        app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         self.assertIn("Demand Forecast", [item.value for item in app.subheader])
         self.assertEqual(len(app.dataframe[1].value), 8)

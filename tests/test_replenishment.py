@@ -157,7 +157,9 @@ class ReplenishmentTests(unittest.TestCase):
         self.assertTrue(totals.empty)
 
     def test_complete_application(self):
-        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        app = AppTest.from_file(str(ROOT / "app.py"))
+        app.session_state["data_source"] = "Synthetic demo"
+        app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         headings = [item.value for item in app.subheader]
         self.assertIn("Demand Forecast", headings)
@@ -175,7 +177,7 @@ class ReplenishmentTests(unittest.TestCase):
         metric_values = {item.label: item.value for item in app.metric}
         self.assertEqual(int(metric_values["Total units recommended"]), supplier_table["total_units"].sum())
         self.assertTrue(any("recommended replenishment quantity" in item.value for item in app.markdown))
-        self.assertEqual(len(app.button), 0)
+        self.assertEqual([button.label for button in app.button], ["Approve reviewed quantity"])
 
 
 if __name__ == "__main__":

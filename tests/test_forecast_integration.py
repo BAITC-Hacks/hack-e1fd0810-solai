@@ -37,7 +37,9 @@ class ForecastIntegrationTests(unittest.TestCase):
         self.assertIn("adjusted_demand", audit.columns)
 
     def test_existing_streamlit_session_refreshes_legacy_engine(self):
-        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        app = AppTest.from_file(str(ROOT / "app.py"))
+        app.session_state["data_source"] = "Synthetic demo"
+        app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         # Reproduce a process holding the old 16-column producer while app.py
         # expects the upgraded stockout/growth contract. No disk files change.
