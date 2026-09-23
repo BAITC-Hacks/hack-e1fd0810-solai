@@ -54,8 +54,11 @@ def recommendation_bundle(mode, fingerprint, supplier, planning_lead_days, servi
     forecasts, audit = forecast_bundle(mode, fingerprint, supplier)
     if mode == "Partner data" and planning_lead_days is not None:
         # The scenario changes only metadata; all demand and order formulas remain in the engines.
-        forecasts = forecasts.assign(lead_time_days=float(planning_lead_days), lead_time_source="manager_planning_assumption")
-        audit = audit.assign(lead_time_days=float(planning_lead_days), lead_time_source="manager_planning_assumption")
+        forecasts, audit = forecasts.copy(), audit.copy()
+        for frame in (forecasts, audit):
+            missing = frame.lead_time_days.isna()
+            frame.loc[missing, "lead_time_days"] = float(planning_lead_days)
+            frame.loc[missing, "lead_time_source"] = "manager_planning_assumption"
     recommendations = engine.replenishment.calculate_replenishment(forecasts, audit, service_factor)
     recommendations["explanation"] = recommendations.apply(engine.explanations.explain_replenishment, axis=1)
     return forecasts, audit, recommendations

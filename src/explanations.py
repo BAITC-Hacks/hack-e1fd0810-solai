@@ -38,7 +38,10 @@ def explain_replenishment(row: pd.Series, language: str = "en") -> str:
         parts.append(f"Raw required quantity before order constraints: {row.get('raw_required_qty')}. "
                      f"Minimum shipment: {row.get('minimum_order_qty')}; order multiple: {row.get('order_multiple')}. "
                      f"MOQ availability: {row['moq_status']}. Missing or zero constraints do not change the quantity.")
-    if row.get("lead_time_source"):
+    if row.get("lead_time_source") == "manager_planning_assumption":
+        parts.append("Источник срока поставки: Допущение пользователя." if language == "ru"
+                     else "Lead-time source: User assumption.")
+    elif row.get("lead_time_source"):
         parts.append(f"Lead-time source: {row['lead_time_source'].replace('_', ' ')}.")
     if row["safety_stock_method"] == "fallback_100pct_monthly":
         parts.append(tr["ex_fallback"])

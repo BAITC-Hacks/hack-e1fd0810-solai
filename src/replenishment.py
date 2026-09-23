@@ -177,6 +177,11 @@ def calculate_replenishment(
                     "inventory_position", "raw_order_qty", "recommended_order_qty",
                     "estimated_order_value"]:
             row[key] = None
+        # Keep independently calculable quantities even when another input is unknown.
+        if values["forecast_demand"] is not None:
+            row["daily_demand"] = values["forecast_demand"] / 30
+        if values["current_stock"] is not None and values["in_transit"] is not None:
+            row["inventory_position"] = values["current_stock"] + values["in_transit"]
         if all(v is not None for v in values.values()):
             row["daily_demand"] = values["forecast_demand"] / 30
             row["lead_time_demand"] = row["daily_demand"] * values["lead_time_days"]

@@ -141,6 +141,8 @@ def forecast(forecasts, audit, row, partner=None):
 def detail(row):
     name = translate_product_name(row.product_name, st.session_state.language)
     st.subheader(name)
+    if row.get("lead_time_source") == "manager_planning_assumption":
+        st.caption(f"{text('col_lead_time_days')}: {row.lead_time_days:g} · {text('user_assumption')}")
     st.caption(f"{row.sku} · {row.supplier} · {row.urgency} · {row.status}")
     for keys in [["current_stock", "in_transit", "forecast_demand", "recommended_order_qty"],
                  ["safety_stock", "target_stock", "lead_time_days", "current_coverage_days"]]:
@@ -274,6 +276,8 @@ def approvals(recommendations, selected, page_skus):
     engine = load_engine()
     sku = selected.sku
     st.subheader(text("workflow"))
+    if selected.get("lead_time_source") == "manager_planning_assumption":
+        st.caption(f"{text('col_lead_time_days')}: {selected.lead_time_days:g} · {text('user_assumption')}")
     st.caption(text("session_only"))
     record = st.session_state["manager_reviews"][sku]
     original = record["original_order_qty"]

@@ -21,6 +21,7 @@ TEXT = {
     "approvals": ("Approvals", "Согласования", "Мақұлдау"),
     "subtitle": ("Demand intelligence and replenishment decision support.", "Анализ спроса и поддержка решений по закупкам.", "Сұранысты талдау және толықтыру шешімдерін қолдау."),
     "unavailable": ("Not available", "Нет данных", "Дерек жоқ"),
+    "user_assumption": ("User assumption", "Допущение пользователя", "Пайдаланушының болжамы"),
     "insufficient_history": ("Insufficient sales history for this SKU. No usable dated sales observations are available.", "Недостаточно истории продаж для этого SKU. Нет доступных наблюдений продаж с корректной датой.", "Бұл SKU бойынша сату тарихы жеткіліксіз. Дұрыс күні бар сату деректері жоқ."),
     "active": ("Active SKUs", "Анализируемые SKU", "Талданатын SKU"),
     "action": ("SKUs requiring action", "SKU требуют внимания", "Назар аударуды қажет ететін SKU"),
