@@ -11,6 +11,7 @@ CALCULATED_COLUMNS = [
     "unit_price", "estimated_order_value", "service_level_factor",
     "history_observations", "safety_stock_method", "anomalies_excluded",
     "review_reasons", "status",
+    "stockout_observations_excluded",
 ]
 
 
@@ -31,7 +32,7 @@ def calculate_replenishment(
     """Use Phase 1 forecasts and its retained, flagged monthly history.
 
     Daily demand = monthly forecast / 30. With at least three clean monthly
-    observations, use sample standard deviation (ddof=1) of recent sales.
+    non-stockout observations, use sample standard deviation (ddof=1) of sales.
     Safety stock = service factor * monthly std * sqrt(lead time / 30).
     This approximates independent daily demand from monthly totals; it is
     not a calibrated service guarantee. With less history, monthly std is
@@ -68,7 +69,15 @@ def calculate_replenishment(
         ].sort_values("date")
         cutoff = pd.Timestamp(row["forecast_month"]).to_period("M")
         recent = history.loc[history["date"].dt.to_period("M") >= cutoff - variability_months]
-        clean = recent.loc[~recent["is_anomaly"].astype(bool)]
+        stockouts = recent.get("is_stockout", pd.Series(False, index=recent.index)).astype(bool)
+        # Censored sales and imputed demand are not independent variability evidence.
+        clean = recent.loc[~recent["is_anomaly"].astype(bool) & ~stockouts]
+        if row.get("stockout_periods", 0):
+            reasons.append("stockout_demand_estimated")
+        if row.get("stockout_unresolved", 0):
+            reasons.append("unresolved_stockout_demand")
+        if row.get("stockout_fallback_periods", 0):
+            reasons.append("stockout_estimation_fallback")
         observations = pd.to_numeric(clean["sales"], errors="coerce")
         if any(_nonnegative_number(v) is None for v in observations):
             reasons.append("invalid_history_sales")
@@ -97,6 +106,7 @@ def calculate_replenishment(
             "safety_stock_method": "fallback_100pct_monthly" if fallback else "historical_sample_std",
             "anomalies_excluded": int(recent["is_anomaly"].sum()),
             "anomalies_detected": anomalies, "unit_price": price,
+            "stockout_observations_excluded": int(stockouts.sum()),
         })
         for key in ["daily_demand", "lead_time_demand", "safety_stock", "target_stock",
                     "inventory_position", "raw_order_qty", "recommended_order_qty",

@@ -16,12 +16,14 @@ It returns a new dataframe and never sends orders or changes source data.
 - `recommended_order_qty = max(0, ceil(raw_order_qty))`
 
 Only the final quantity is rounded up. Display rounding never changes the calculation.
-The monthly forecast already includes Phase 1's seasonal adjustment.
+The monthly forecast already includes seasonality, stockout compensation and
+sustainable growth. See [forecasting methods](demand_forecasting.md).
 
 ## Safety-stock assumptions and fallback
 
 Use the latest 12 calendar months before the forecast month, independently per
-SKU. Exclude Phase 1's `is_anomaly` observations without deleting audit rows.
+SKU. Exclude Phase 1's `is_anomaly` and `is_stockout` observations without deleting
+audit rows. Lost-demand estimates are not independent variability observations.
 At least three clean observations are needed for sample standard deviation
 (`ddof=1`). More variable monthly sales produce a larger buffer for the same
 lead time and service factor. Seasonal variation in historical sales remains
@@ -30,7 +32,8 @@ in the variability estimate, so this baseline can be conservative.
 The square-root conversion assumes independent, stationary daily demand:
 monthly variance approximates 30 times daily variance. Therefore lead-time
 standard deviation is monthly standard deviation times `sqrt(days / 30)`.
-Monthly totals cannot reveal within-month variation or stockouts. This is an
+Monthly totals cannot reveal within-month variation; stockouts need the explicit
+`stockout_days` metadata now included in the synthetic sample. This is an
 explainable approximation, not a calibrated service guarantee. The configurable
 factor defaults to 1.65; it is not a promised fill rate.
 
@@ -43,7 +46,7 @@ estimated safety stock; this does not prove real-world demand is risk-free.
 
 ## Status and review
 
-REVIEW takes precedence for detected sales anomalies, insufficient clean
+REVIEW takes precedence for estimated/unresolved stockout demand, detected sales anomalies, insufficient clean
 history, missing months within the recent observed range, invalid numerical
 inputs, or missing supplier/price. `review_reasons` contains machine-readable
 reason codes. Flagged anomalies cannot inflate safety stock, but remain visible

@@ -2,10 +2,14 @@
 
 import pandas as pd
 
+from src.forecasting import explain_forecast
+
 
 def explain_replenishment(row: pd.Series) -> str:
     """Explain formulas, fallback, adjustments and review conditions."""
     parts = [f"Forecast demand is {row['forecast_demand']} units/month."]
+    if "growth_factor" in row:
+        parts.append(explain_forecast(row))
     if pd.notna(row["recommended_order_qty"]):
         parts.append(
             f"Daily demand is forecast / 30 = {row['daily_demand']:.2f} units/day. "
@@ -18,7 +22,7 @@ def explain_replenishment(row: pd.Series) -> str:
             f"{row['monthly_demand_std']:.2f} × sqrt({row['lead_time_days']} / 30) "
             f"= {row['safety_stock']:.2f} units. "
             f"The monthly variability estimate uses {row['history_observations']} "
-            "non-anomalous observations; greater variability increases safety stock."
+            "non-anomalous, non-stockout observations; greater variability increases safety stock."
         )
         parts.append(
             f"Current stock is {row['current_stock']} units and {row['in_transit']} "
@@ -47,6 +51,8 @@ def explain_replenishment(row: pd.Series) -> str:
     )
     if row["seasonal_factor"] != 1:
         parts.append(f"Phase 1 already applied a seasonal factor of {row['seasonal_factor']:.4f} to demand; it is not applied again here.")
+    if row.get("stockout_observations_excluded", 0):
+        parts.append(f"{int(row['stockout_observations_excluded'])} stockout period(s) were excluded from safety-stock variability; imputed demand is not treated as observed variability.")
     if row["status"] == "REVIEW":
         parts.append(f"REVIEW required: {row['review_reasons'].replace(';', ', ').replace('_', ' ')}. Any calculated quantity is provisional.")
     parts.append("This is a proposal for manager review only. No supplier order is sent.")

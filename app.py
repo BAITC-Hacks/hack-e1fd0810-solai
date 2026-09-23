@@ -7,9 +7,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 from src.data_loader import load_sample_data
-from src.forecasting import explain_forecast, forecast_demand
-from src.replenishment import calculate_replenishment, supplier_proposals
-from src.explanations import explain_replenishment
+from src.engine import load_engine
+
+
+engine = load_engine()
 
 
 st.set_page_config(page_title="Solai | Replenishment", page_icon="📦", layout="wide")
@@ -42,10 +43,11 @@ else:
         "months, falling back to older regular observations if needed. "
         "Missing months are not assumed to have zero sales."
     )
-    forecasts, audit = forecast_demand(data)
+    forecasts, audit = engine.forecasting.forecast_demand(data)
     display_columns = [
         "sku", "product_name", "category", "supplier", "baseline_demand",
-        "seasonal_factor", "forecast_demand", "anomalies_detected",
+        "raw_sales_baseline", "stockout_adjustment", "estimated_lost_demand",
+        "seasonal_factor", "growth_factor", "forecast_demand", "anomalies_detected",
         "current_stock", "in_transit", "lead_time_days",
     ]
     st.dataframe(forecasts[display_columns].round(2), use_container_width=True, hide_index=True)
@@ -61,6 +63,16 @@ else:
         x=anomalies["date"], y=anomalies["sales"], mode="markers",
         name="Sales spike", marker=dict(color="red", size=12, symbol="x"),
     ))
+    chart.add_trace(go.Scatter(
+        x=history["date"], y=history["adjusted_demand"].where(~history["is_anomaly"]),
+        mode="lines+markers", name="Demand including estimated lost sales",
+        line=dict(dash="dash"),
+    ))
+    stockout_history = history.loc[history["is_stockout"]]
+    chart.add_trace(go.Scatter(
+        x=stockout_history["date"], y=stockout_history["sales"], mode="markers",
+        name="Stockout sales", marker=dict(color="orange", size=12, symbol="diamond"),
+    ))
     for column, label, dash in [
         ("baseline_demand", "Recent baseline", "dash"),
         ("forecast_demand", "Next-month forecast", "dot"),
@@ -72,7 +84,7 @@ else:
         ))
     chart.update_layout(xaxis_title="Month", yaxis_title="Sales (units/month)")
     st.plotly_chart(chart, use_container_width=True)
-    st.write(explain_forecast(selected))
+    st.write(engine.forecasting.explain_forecast(selected))
     with st.expander("Forecast inputs and anomaly audit"):
         st.write(f"Raw recent mean (including spikes): {selected['raw_demand_estimate']:.1f} units/month")
         st.dataframe(history, use_container_width=True, hide_index=True)
@@ -88,7 +100,7 @@ else:
         help="Safety stock = factor × monthly demand standard deviation × sqrt(lead-time days / 30). "
              "This is an approximation from monthly data, not a guaranteed service level.",
     )
-    recommendations = calculate_replenishment(forecasts, audit, service_factor)
+    recommendations = engine.replenishment.calculate_replenishment(forecasts, audit, service_factor)
     order_mask = recommendations["recommended_order_qty"].gt(0).fillna(False)
     metrics = st.columns(4)
     metrics[0].metric("SKUs requiring order", int(order_mask.sum()))
@@ -130,7 +142,7 @@ else:
     st.plotly_chart(quantity_chart, use_container_width=True)
 
     st.subheader("Supplier proposals — manager review only")
-    proposal_lines, supplier_totals = supplier_proposals(recommendations)
+    proposal_lines, supplier_totals = engine.replenishment.supplier_proposals(recommendations)
     st.caption(
         "Estimated values use each SKU's latest unit_price, assuming a common currency. "
         "Taxes, shipping, pack sizes and minimum order quantities are not included. "
@@ -146,8 +158,11 @@ else:
 
     why_sku = st.selectbox("Why this order?", recommendations["sku"].tolist())
     recommendation = recommendations.loc[recommendations["sku"] == why_sku].iloc[0]
-    st.write(explain_replenishment(recommendation))
+    st.write(engine.explanations.explain_replenishment(recommendation))
     calculation_columns = [
+        "raw_demand_estimate", "anomaly_adjustment", "raw_sales_baseline",
+        "stockout_adjustment", "baseline_demand", "seasonal_factor", "seasonal_adjustment",
+        "growth_factor", "growth_adjustment",
         "forecast_demand", "daily_demand", "lead_time_days", "lead_time_demand",
         "monthly_demand_std", "service_level_factor", "history_observations",
         "safety_stock", "current_stock", "in_transit", "inventory_position",
@@ -156,4 +171,10 @@ else:
     st.dataframe(
         recommendation[calculation_columns].rename_axis("Calculation").reset_index(name="Value"),
         use_container_width=True, hide_index=True,
+    )
+    st.caption(
+        "Forecast calculation: raw recent mean + robust/spike adjustment + stockout adjustment "
+        "+ seasonal adjustment + growth adjustment = final monthly forecast. "
+        "The robust/spike adjustment includes changing from a mean to a median; it is not solely lost spike sales. "
+        "Estimated lost demand in the forecast table is a historical total, not an extra amount to order."
     )
