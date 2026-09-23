@@ -69,6 +69,19 @@ class ForecastIntegrationTests(unittest.TestCase):
             load_engine()
             reload.assert_not_called()
 
+    def test_legacy_one_argument_explanation_is_refreshed_for_en_ru(self):
+        row = forecasting.forecast_demand(load_sample_data(ROOT / "data/sample_data.csv"))[0].iloc[0]
+        with patch.object(forecasting, "explain_forecast", lambda row: "legacy"):
+            engine = load_engine()
+            english = engine.forecasting.explain_forecast(row, "en")
+            russian = engine.forecasting.explain_forecast(row, "ru")
+            self.assertNotEqual(english, russian)
+            self.assertNotEqual(english, "legacy")
+            self.assertIs(engine.explanations.explain_forecast, engine.forecasting.explain_forecast)
+        with patch.object(engine.explanations, "explain_forecast", lambda row: "legacy alias"):
+            refreshed = load_engine()
+            self.assertIs(refreshed.explanations.explain_forecast, refreshed.forecasting.explain_forecast)
+
 
 if __name__ == "__main__":
     unittest.main()

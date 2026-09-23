@@ -100,20 +100,26 @@ def forecast(forecasts, audit, row, partner=None):
     for col, key in zip(columns, ["baseline_demand", "seasonal_factor", "growth_factor", "forecast_demand"]):
         with col:
             metric(text(f"col_{key}"), row.get(key))
-    history = audit.loc[audit.sku.eq(row.sku)]
-    chart = go.Figure()
-    observed = history.get("raw_sales", history.sales)
-    chart.add_trace(go.Scatter(x=history.date, y=observed, mode="lines+markers", name=text("historical_sales"), line=dict(color="#849775", width=2)))
-    anomalies = history.loc[history.is_anomaly.astype(bool)]
-    chart.add_trace(go.Scatter(x=anomalies.date, y=anomalies.get("raw_sales", anomalies.sales), mode="markers", name=text("sales_spike"), marker=dict(color=PALETTE["CRITICAL"], size=9)))
-    chart.add_trace(go.Scatter(x=history.date, y=history.adjusted_demand.where(~history.is_anomaly.astype(bool)), mode="lines", name=text("derived"), line=dict(color="#AD7359", dash="dash")))
-    stockouts = history.loc[history.is_stockout.astype(bool)]
-    chart.add_trace(go.Scatter(x=stockouts.date, y=stockouts.sales, mode="markers", name="Stockout", marker=dict(color=PALETTE["MEDIUM"], size=9, symbol="diamond")))
-    for key, label, dash in [("baseline_demand", "recent_baseline", "dash"), ("forecast_demand", "next_forecast", "dot")]:
-        if intelligence.number(row.get(key)) is not None and len(history):
-            chart.add_trace(go.Scatter(x=[history.date.min(), row.forecast_month], y=[row[key]] * 2, mode="lines", name=text(label), line=dict(dash=dash)))
-    chart.update_layout(xaxis_title=text("month"), yaxis_title=text("sales_units_month"))
-    st.plotly_chart(style_chart(chart, 370), width="stretch", key="forecast_history")
+    history = audit.loc[audit.sku.eq(str(row.sku))].copy()
+    history["date"] = pd.to_datetime(history["date"], errors="coerce")
+    history = history.loc[history.date.notna() & pd.to_numeric(
+        history.get("raw_sales", history.sales), errors="coerce").notna()].sort_values("date")
+    if history.empty:
+        st.info(text("insufficient_history"))
+    else:
+        chart = go.Figure()
+        observed = history.get("raw_sales", history.sales)
+        chart.add_trace(go.Scatter(x=history.date, y=observed, mode="lines+markers", name=text("historical_sales"), line=dict(color="#849775", width=2)))
+        anomalies = history.loc[history.is_anomaly.astype(bool)]
+        chart.add_trace(go.Scatter(x=anomalies.date, y=anomalies.get("raw_sales", anomalies.sales), mode="markers", name=text("sales_spike"), marker=dict(color=PALETTE["CRITICAL"], size=9)))
+        chart.add_trace(go.Scatter(x=history.date, y=history.adjusted_demand.where(~history.is_anomaly.astype(bool)), mode="lines", name=text("derived"), line=dict(color="#AD7359", dash="dash")))
+        stockouts = history.loc[history.is_stockout.astype(bool)]
+        chart.add_trace(go.Scatter(x=stockouts.date, y=stockouts.sales, mode="markers", name="Stockout", marker=dict(color=PALETTE["MEDIUM"], size=9, symbol="diamond")))
+        for key, label, dash in [("baseline_demand", "recent_baseline", "dash"), ("forecast_demand", "next_forecast", "dot")]:
+            if intelligence.number(row.get(key)) is not None and len(history):
+                chart.add_trace(go.Scatter(x=[history.date.min(), row.forecast_month], y=[row[key]] * 2, mode="lines", name=text(label), line=dict(dash=dash)))
+        chart.update_layout(xaxis_title=text("month"), yaxis_title=text("sales_units_month"))
+        st.plotly_chart(style_chart(chart, 370), width="stretch", key="forecast_history")
     signals(row, history)
     with st.expander(text("why")):
         explanation = clean_text(load_engine().forecasting.explain_forecast(row, st.session_state.language))
@@ -160,7 +166,7 @@ def detail(row):
         st.caption(text("source_note"))
         source_fields = [key for key in ["sku", "product_name", "supplier", "category", "warehouse", "inventory_scope", "current_stock", "in_transit", "stock_as_of", "stock_source", "transit_source", "lead_time_days", "lead_time_source", "minimum_order_qty", "order_multiple"] if key in row]
         st.write(f"**{text('source')}**")
-        show_table(pd.DataFrame({"Field": source_fields, "Value": [clean_text(row.get(k)) if pd.notna(row.get(k)) else text("unavailable") for k in source_fields]}))
+        show_table(pd.DataFrame({"Field": source_fields, "Value": [clean_text(row.get(k)) if pd.notna(row.get(k)) else None for k in source_fields]}))
         st.write(f"**{text('derived')}**")
         calculation = row[CALCULATION_COLUMNS].rename_axis(text("calculation")).reset_index(name=text("value"))
         show_table(calculation)

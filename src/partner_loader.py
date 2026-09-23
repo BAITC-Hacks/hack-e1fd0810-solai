@@ -66,8 +66,15 @@ def _table(rows, header, required, source):
 
 def _key_rows(frame, key):
     result = frame.loc[frame[key].notna()].copy()
-    result["sku"] = result[key].astype(str).str.strip()
-    return result.loc[result.sku.ne("") & result.sku.ne("Итого")]
+    # Preserve text identifiers (including leading zeroes); Excel numeric codes
+    # may arrive as floats, but must join the same integer code in other sheets.
+    result["sku"] = result[key].map(
+        lambda value: str(int(value)) if isinstance(value, (int, float))
+        and np.isfinite(value) and float(value).is_integer() else str(value).strip()).astype(str)
+    # The IEK transit workbook contains an otherwise empty placeholder code 0.
+    # It is not a product and must never become a selectable SKU.
+    return result.loc[~result.sku.str.casefold().isin(
+        ["", "0", "0.0", "none", "nan", "<na>", "итого"])]
 
 
 def normalize_monthly(frame, key, name, value_name):
@@ -242,7 +249,10 @@ def load_partner_data(raw_dir) -> PartnerData:
         names = [monthly[["sku", "product_name"]], stocks[["sku", "product_name"]], documents[["sku", "product_name"]],
                  transit[["sku", "Наименование"]].rename(columns={"Наименование": "product_name"}),
                  moq[["sku", "Наименование" if brand == "IEK" else "Номенклатура"]].rename(columns={"Наименование": "product_name", "Номенклатура": "product_name"})]
-        catalog = pd.concat(names).drop_duplicates("sku").set_index("sku")
+        names = pd.concat(names)
+        # A blank name in the first report must not mask a supplied name elsewhere.
+        names["product_name"] = names.product_name.replace(r"^\s*$", np.nan, regex=True)
+        catalog = names.sort_values("product_name", key=lambda s: s.isna(), kind="stable").drop_duplicates("sku").set_index("sku")
         catalog["brand"] = catalog["supplier"] = brand
         catalog["warehouse"] = None  # Not allocated: document warehouse is not inventory scope.
         catalog["inventory_scope"] = "all_reported_warehouses"
@@ -263,7 +273,7 @@ def load_partner_data(raw_dir) -> PartnerData:
             catalog.loc[snap.index, "current_stock"] = snap["Свободный остаток"]
             catalog.loc[snap.index, "stock_as_of"] = as_of
             catalog.loc[snap.index, "stock_source"] = "provided_free_stock_snapshot"
-            catalog.loc[snap.index, "category"] = snap["Категория 2026"].astype(str)
+            catalog.loc[snap.index, "category"] = snap["Категория 2026"]
             catalog["reported_cost"] = snap["СС реал"]
         months = pd.date_range(monthly.date.min(), monthly.date.max(), freq="MS")
         hist = pd.MultiIndex.from_product([catalog.index, months], names=["sku", "date"]).to_frame(index=False)

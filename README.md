@@ -17,7 +17,13 @@ SOLAI combines partner-provided sales and inventory evidence with explainable fo
 - **AI Copilot:** on-demand, evidence-grounded decision briefs and SKU analyses. Its exact behavior is documented below.
 - **Approvals:** read-only calculated quantities, separate manager edits, explicit approval, session decision history, supplier proposals and CSV export.
 
-Supplier, literal SKU/product search, urgency and status filters apply **before** 25-SKU pagination. KPIs, brief, supplier totals and complete export cover all filtered results. Only the visible page feeds detailed comparison tables/charts. The selected SKU is shared across tabs. Empty filters show an explicit empty state. Numeric nulls display as **Not available**, remaining null in the underlying data and exports; known zero remains zero.
+Supplier, literal SKU/product search, urgency and status filters apply **before** 25-SKU pagination. KPIs, brief, supplier totals and complete export cover all filtered results. Only the visible page feeds detailed comparison tables/charts. The selected SKU is shared across tabs. Empty filters show an explicit empty state. Missing table values display as **—**; text uses **Not available** (EN) or **Нет данных** (RU). Values remain null in the underlying data and exports; known zero remains zero.
+
+EN/RU language switching is available in the header (KZ is also retained). Core forecast explanations accept the selected language; some technical audit text remains English. The engine refreshes legacy one-argument forecast explainers in running Streamlit sessions.
+
+### Warehouse / 3D status
+
+The current working tree contains a real-data inventory comparison and a renderer integration boundary, **not an installed 3D SKU visualization**. No 3D implementation was found during the current fix. An existing teammate component can use the renderer contract described above; this repository must not be presented as already rendering a 3D warehouse.
 
 ## Installation, run and tests
 
@@ -86,9 +92,15 @@ Tests use Python unittest and Streamlit AppTest; pytest is not required. They co
 
 ## Input data
 
-The primary source is **12 partner-provided Excel workbooks in `data/raw/`**, covering IEK (3,185 distinct 1C codes) and Systeme Electric (724). All 14 sheets were inspected. See [the workbook inspection and mapping report](docs/partner_data_inspection.md) for exact filenames, headers, dimensions, joins and data-quality limits.
+The primary source is **12 partner-provided Excel workbooks in `data/raw/`**, covering IEK (3,184 valid distinct 1C codes) and Systeme Electric (724). All 14 sheets were inspected. One empty IEK transit placeholder with code `0` is excluded from the product catalog; earlier inspection counts included it. See [the workbook inspection and mapping report](docs/partner_data_inspection.md) for workbook structure and joins. Keep supplied workbooks private; do not publish raw partner records or credentials.
 
 The loader preserves 1C codes as strings, including leading zeroes and trailing underscores. Monthly sales/inventory `Номенклатура.Код`, document `Код`, and transit/MOQ `Код 1с` (or `Номенклатура.Код`) join on the same real SKU. Articles/names are metadata, not fuzzy join keys. Brands supply the supplier grouping; they are not confirmed legal supplier entities. No customer identifiers are supplied.
+
+### Missing-data policy
+
+Blank source cells remain unknown, never zero. Missing/placeholder identifiers do not become SKU `0`; integral numeric Excel codes normalize to strings while text codes retain leading zeroes. A supplied name in another report can fill a blank catalog name for the same exact code. Missing product names remain unavailable. No name or stock quantity is invented. Category blanks remain null rather than the literal string `None`.
+
+Forecast charts use the selected string SKU and sorted valid dated observations. Products with no usable history display an EN/RU insufficient-history message rather than an empty chart. Missing supplier lead times, purchase prices, stock or transit still require review; a planning lead time is an explicit manager assumption. The synthetic CSV remains a fallback/demo source.
 
 Monthly reports cover January 2024 through September 2026. September is partial at the dated 22 September 2026 snapshot: it is retained for audit and excluded from fitting. Forecast origin is September 2026, not the computer's current date. Blank monthly cells remain unknown. Complete observed signed outbound document totals can fill a blank sales month; a month with missing document quantities remains incomplete; missing documents never imply zero sales. Negative net return months remain auditable but are excluded from demand fitting. Monthly and document sales are reconciled, never added together.
 

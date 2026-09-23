@@ -12,7 +12,8 @@ from src.decision_intelligence import filter_recommendations
 from src.partner_loader import workbook_fingerprint
 from src.presentation import apply_theme, text
 
-if getattr(engine_loader, "EXPECTED_RECOMMENDATION_SCHEMA_VERSION", None) != 4:
+if (getattr(engine_loader, "EXPECTED_RECOMMENDATION_SCHEMA_VERSION", None) != 4
+        or getattr(engine_loader, "EXPECTED_EXPLANATION_INTERFACE_VERSION", None) != 1):
     engine_loader = importlib.reload(engine_loader)
 engine = engine_loader.load_engine()
 

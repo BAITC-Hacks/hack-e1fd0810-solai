@@ -21,6 +21,7 @@ TEXT = {
     "approvals": ("Approvals", "Согласования", "Мақұлдау"),
     "subtitle": ("Demand intelligence and replenishment decision support.", "Анализ спроса и поддержка решений по закупкам.", "Сұранысты талдау және толықтыру шешімдерін қолдау."),
     "unavailable": ("Not available", "Нет данных", "Дерек жоқ"),
+    "insufficient_history": ("Insufficient sales history for this SKU. No usable dated sales observations are available.", "Недостаточно истории продаж для этого SKU. Нет доступных наблюдений продаж с корректной датой.", "Бұл SKU бойынша сату тарихы жеткіліксіз. Дұрыс күні бар сату деректері жоқ."),
     "active": ("Active SKUs", "Анализируемые SKU", "Талданатын SKU"),
     "action": ("SKUs requiring action", "SKU требуют внимания", "Назар аударуды қажет ететін SKU"),
     "urgent": ("Critical / High urgency", "Критичная / высокая срочность", "Сындарлы / жоғары жеделдік"),
@@ -108,9 +109,12 @@ def show_table(frame, *, height=None, urgency=False):
     """Format a display-only copy; calculations and explicit CSV exports stay typed.
 
     Streamlit's numeric grid overrides Styler's null formatting. Only columns
-    with nulls become display strings, so unknown values read 'Not available'.
+    with nulls become display strings, so unknown table values read '—'.
     """
     shown = frame.copy()
+    for column in shown.select_dtypes(include=["object", "string"]):
+        shown[column] = shown[column].map(lambda v: pd.NA if isinstance(v, str)
+            and v.strip() in {"", "None", "nan", "NaN", "<NA>", "NaT", "Not available", "Нет данных", "Дерек жоқ"} else v)
     if "product_name" in shown:
         names = {name: translate_product_name(name, st.session_state.get("language", "en"))
                  for name in shown.product_name.dropna().unique()}
@@ -121,10 +125,10 @@ def show_table(frame, *, height=None, urgency=False):
                 if isinstance(value, (list, dict, tuple)):
                     return str(value)
                 if pd.isna(value):
-                    return text("unavailable")
+                    return "—"
                 return format_number(value) if isinstance(value, Number) and not isinstance(value, bool) else str(value)
             shown[column] = shown[column].map(display_value)
-    style = shown.style.format(precision=2, na_rep=text("unavailable"))
+    style = shown.style.format(precision=2, na_rep="—")
     if urgency and "urgency" in shown:
         style = style.map(lambda v: f"background-color:{TINTS.get(v, '#FFFFFF')};color:#20241E;font-weight:600", subset=["urgency"])
     config = {c: st.column_config.Column(label=text(f"col_{c}") if f"col_{c}" in TRANSLATIONS["en"] else c.replace("_", " ").title()) for c in shown}

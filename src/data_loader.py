@@ -21,7 +21,7 @@ REQUIRED_COLUMNS = {
 
 def load_sample_data(path: str | Path) -> pd.DataFrame:
     """Load the sample CSV and ensure it has the fields the dashboard expects."""
-    data = pd.read_csv(path, parse_dates=["date"])
+    data = pd.read_csv(path, parse_dates=["date"], dtype={"sku": "string"})
     missing = REQUIRED_COLUMNS.difference(data.columns)
     if missing:
         raise ValueError(f"Dataset is missing required columns: {', '.join(sorted(missing))}")

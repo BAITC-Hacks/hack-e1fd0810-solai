@@ -1,11 +1,13 @@
 """Load a consistent engine when Streamlit reruns after a schema upgrade."""
 
 import importlib
+import inspect
 from types import SimpleNamespace
 
 
 EXPECTED_FORECAST_SCHEMA_VERSION = 2
 EXPECTED_RECOMMENDATION_SCHEMA_VERSION = 4
+EXPECTED_EXPLANATION_INTERFACE_VERSION = 1
 ADJUSTMENT_COLUMNS = {
     "raw_sales_baseline", "stockout_adjustment", "estimated_lost_demand", "growth_factor",
 }
@@ -23,7 +25,14 @@ def load_engine():
              "replenishment", "explanations", "manager_review")
     modules = {name: importlib.import_module(f"src.{name}") for name in names}
     forecasting = modules["forecasting"]
+    try:
+        for explain in (forecasting.explain_forecast, modules["explanations"].explain_forecast):
+            inspect.signature(explain).bind(None, "en")
+        explanation_is_current = True
+    except (TypeError, ValueError):
+        explanation_is_current = False
     if (getattr(forecasting, "FORECAST_SCHEMA_VERSION", None) != EXPECTED_FORECAST_SCHEMA_VERSION
+            or not explanation_is_current
             or not ADJUSTMENT_COLUMNS.issubset(getattr(forecasting, "SUMMARY_COLUMNS", []))
             or getattr(modules["replenishment"], "RECOMMENDATION_SCHEMA_VERSION", None)
             != EXPECTED_RECOMMENDATION_SCHEMA_VERSION):

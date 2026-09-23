@@ -1,6 +1,7 @@
 """Real workbook integration and conservative normalization boundaries."""
 
 from pathlib import Path
+import json
 import unittest
 
 import numpy as np
@@ -9,7 +10,7 @@ from streamlit.testing.v1 import AppTest
 from ui_helpers import forecast_table
 
 from src.partner_loader import (load_partner_data, normalize_monthly, detect_document_anomalies,
-                                infer_stockout_evidence, reconcile_document_sales)
+                                infer_stockout_evidence, reconcile_document_sales, _key_rows)
 from src.partner_pipeline import partner_forecasts
 from src.forecasting import forecast_demand
 from src.replenishment import calculate_replenishment, apply_order_constraints
@@ -24,6 +25,11 @@ def documents(quantities):
 
 
 class PartnerUnitTests(unittest.TestCase):
+    def test_keys_preserve_leading_zeroes_and_reject_placeholders(self):
+        frame = pd.DataFrame({"code": ["000123", " 030200128_ ", 123.0, None, "", 0, "None"]})
+        self.assertEqual(_key_rows(frame, "code").sku.tolist(), ["000123", "030200128_", "123"])
+        self.assertTrue(_key_rows(pd.DataFrame({"code": [np.nan]}), "code").empty)
+
     def test_monthly_schema_preserves_keys_blanks_and_signed_returns(self):
         frame = pd.DataFrame({"Код": ["0001_", "002"], "Товар": ["A", "B"],
                               "Январь 2026": [10, None], "Февраль 2026": [-2, 0], "Итого": [8, 0]})
@@ -117,7 +123,9 @@ class RealPartnerIntegrationTests(unittest.TestCase):
         d = self.partner
         self.assertEqual(len({r["filename"] for r in d.inspection}), 12)
         self.assertEqual(len(d.inspection), 14)
-        self.assertEqual(d.catalog.groupby("brand").size().to_dict(), {"IEK": 3185, "Systeme Electric": 724})
+        self.assertEqual(d.catalog.groupby("brand").size().to_dict(), {"IEK": 3184, "Systeme Electric": 724})
+        self.assertNotIn("0", d.catalog.sku.values)
+        self.assertTrue(d.catalog.sku.map(lambda value: isinstance(value, str)).all())
         self.assertFalse(d.catalog.sku.duplicated().any())
         self.assertTrue(d.catalog.lead_time_days.isna().all())
         self.assertTrue(d.catalog.unit_price.isna().all())
@@ -151,7 +159,7 @@ class RealPartnerIntegrationTests(unittest.TestCase):
     def test_entire_catalog_produces_auditable_recommendations(self):
         forecasts, audit = partner_forecasts(self.partner, planning_lead_days=30)
         recommendations = calculate_replenishment(forecasts, audit)
-        self.assertEqual(len(recommendations), 3909)
+        self.assertEqual(len(recommendations), 3908)
         self.assertFalse(recommendations.sku.duplicated().any())
         self.assertTrue(recommendations.recommended_order_qty.dropna().ge(0).all())
         self.assertEqual(set(recommendations.sku), set(self.partner.catalog.sku))
@@ -164,8 +172,18 @@ class RealPartnerIntegrationTests(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(app.sidebar.selectbox[0].value, "Partner data")
         self.assertEqual(len(forecast_table(app)), 25)
+        def assert_history_chart(brand):
+            sku = app.selectbox(key="selected_sku").value
+            self.assertIsInstance(sku, str)
+            self.assertNotEqual(sku, "0")
+            self.assertEqual(self.partner.catalog.set_index("sku").loc[sku, "brand"], brand)
+            self.assertTrue(self.partner.history.loc[self.partner.history.sku.eq(sku)].sales.notna().any())
+            chart = next(c for c in app.get("plotly_chart") if "forecast_history" in c.proto.id)
+            self.assertGreater(len(json.loads(chart.proto.spec)["data"][0]["x"]), 0)
+        assert_history_chart("IEK")
         brand = next(w for w in app.sidebar.selectbox if w.label == "Supplier / brand")
         brand.select("Systeme Electric").run(timeout=60)
+        assert_history_chart("Systeme Electric")
         next(w for w in app.sidebar.number_input if w.label == "Planning lead time (days)").set_value(60).run(timeout=60)
         self.assertEqual(len(app.exception), 0)
         table = next(t.value for t in app.dataframe if "raw_required_qty" in t.value and "urgency" in t.value)

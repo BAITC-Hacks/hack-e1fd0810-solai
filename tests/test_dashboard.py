@@ -46,12 +46,14 @@ class DashboardTests(unittest.TestCase):
         app = AppTest.from_string('''import pandas as pd
 import streamlit as st
 from src.presentation import show_table
-frame = pd.DataFrame({"recommended_order_qty": pd.array([None, 0, 25], dtype="Int64")})
+frame = pd.DataFrame({"recommended_order_qty": pd.array([None, 0, 25], dtype="Int64"),
+                      "category": [None, "None", "Known"]})
 show_table(frame)
 st.session_state["original_values"] = frame
 ''').run()
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(app.dataframe[0].value.recommended_order_qty.tolist(), ["Not available", "0", "25"])
+        self.assertEqual(app.dataframe[0].value.recommended_order_qty.tolist(), ["—", "0", "25"])
+        self.assertEqual(app.dataframe[0].value.category.tolist(), ["—", "—", "Known"])
         self.assertTrue(pd.isna(app.session_state["original_values"].iloc[0, 0]))
         self.assertEqual(app.session_state["original_values"].iloc[1, 0], 0)
 
@@ -77,6 +79,22 @@ st.session_state["original_values"] = frame
         app.text_input(key="product_search").set_value("no_such_product").run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(any("No SKUs match" in info.value for info in app.info))
+
+    def test_empty_history_has_localized_message_instead_of_empty_chart(self):
+        script = '''import streamlit as st
+from src.dashboard_views import forecast
+from src.forecasting import forecast_demand
+from src.data_loader import load_sample_data
+forecasts, audit = forecast_demand(load_sample_data("data/sample_data.csv"))
+forecast(forecasts, audit.iloc[:0], forecasts.iloc[0])
+'''
+        for language, message in [("en", "Insufficient sales history"), ("ru", "Недостаточно истории продаж")]:
+            app = AppTest.from_string(script)
+            app.session_state["language"] = language
+            app.run(timeout=30)
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any(message in info.value for info in app.info))
+            self.assertEqual(len(app.get("plotly_chart")), 0)
 
     def test_language_changes_preserve_approval_and_do_not_recalculate(self):
         app = demo()

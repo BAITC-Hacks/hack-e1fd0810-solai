@@ -193,8 +193,8 @@ def translate_product_name(
     source language. Original names remain unchanged in application data.
     """
     original = "" if product_name is None else str(product_name).strip()
-    if not original:
-        return {"ru": "Неизвестный товар", "kz": "Белгісіз тауар", "kk": "Белгісіз тауар"}.get((target_language or "en").lower(), "Unknown product")
+    if not original or original in {"None", "nan", "NaN", "<NA>", "NaT"}:
+        return {"ru": "Нет данных", "kz": "Дерек жоқ", "kk": "Дерек жоқ"}.get((target_language or "en").lower(), "Not available")
     return _translate_names([original], target_language, api_key=api_key, cache_path=cache_path).get(original, original)
 
 
