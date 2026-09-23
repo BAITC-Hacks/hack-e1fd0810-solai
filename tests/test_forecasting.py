@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
+from ui_helpers import forecast_table
 
 from src.anomaly_detection import detect_sales_anomalies
 from src.data_loader import load_sample_data
@@ -121,10 +122,10 @@ class ForecastTests(unittest.TestCase):
         app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         self.assertIn("Demand Forecast", [item.value for item in app.subheader])
-        self.assertEqual(len(app.dataframe[1].value), 8)
-        app.selectbox[0].select("SNK-440").run(timeout=30)
+        self.assertEqual(len(forecast_table(app)), 8)
+        app.selectbox(key="selected_sku").select("SNK-440").run(timeout=30)
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(app.selectbox[0].value, "SNK-440")
+        self.assertEqual(app.selectbox(key="selected_sku").value, "SNK-440")
 
 
 if __name__ == "__main__":

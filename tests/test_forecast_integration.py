@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
+from ui_helpers import forecast_table
 
 from src import forecasting
 from src.data_loader import load_sample_data
@@ -55,7 +56,7 @@ class ForecastIntegrationTests(unittest.TestCase):
             app.run(timeout=30)
             self.assertEqual(len(app.exception), 0)
             legacy.assert_not_called()
-            table = app.dataframe[1].value.set_index("sku")
+            table = forecast_table(app).set_index("sku")
             self.assertEqual(table.loc["SNK-440", "raw_sales_baseline"], 295)
             self.assertEqual(table.loc["SNK-440", "stockout_adjustment"], 14)
             self.assertGreater(table.loc["SNK-440", "estimated_lost_demand"], 0)

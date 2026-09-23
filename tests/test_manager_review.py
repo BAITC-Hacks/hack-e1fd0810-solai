@@ -6,6 +6,7 @@ import unittest
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
+from ui_helpers import forecast_table
 
 from src.manager_review import sync_review_state, set_review_quantity, approve_review, reviewed_recommendations
 from src.data_loader import load_sample_data
@@ -99,7 +100,7 @@ class ManagerReviewTests(unittest.TestCase):
         app.session_state["data_source"] = "Synthetic demo"
         app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
-        app.selectbox[1].select("SNK-440").run(timeout=30)
+        app.selectbox(key="selected_sku").select("SNK-440").run(timeout=30)
         original = review_table(app).set_index("sku").loc["SNK-440", "recommended_order_qty"]
         quantity_widget(app).set_value(25).run(timeout=30)
         self.assertEqual(len(app.exception), 0)
@@ -108,24 +109,24 @@ class ManagerReviewTests(unittest.TestCase):
         self.assertEqual(row.recommended_order_qty, original)
         self.assertTrue(row.quantity_changed)
         self.assertIn(row.urgency, ["CRITICAL", "HIGH", "MEDIUM", "LOW"])
-        app.button[0].click().run(timeout=30)
+        next(button for button in app.button if button.label == "Approve reviewed quantity").click().run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(review_table(app).set_index("sku").loc["SNK-440", "decision_state"], "Approved")
         self.assertTrue(any("No supplier order was sent" in item.value for item in app.success))
         app.run(timeout=30)
-        app.selectbox[1].select("BEV-100").run(timeout=30)
-        app.selectbox[1].select("SNK-440").run(timeout=30)
+        app.selectbox(key="selected_sku").select("BEV-100").run(timeout=30)
+        app.selectbox(key="selected_sku").select("SNK-440").run(timeout=30)
         self.assertEqual(quantity_widget(app).value, 25)
         self.assertEqual(review_table(app).set_index("sku").loc["SNK-440", "decision_state"], "Approved")
         quantity_widget(app).set_value(26).run(timeout=30)
         self.assertEqual(review_table(app).set_index("sku").loc["SNK-440", "decision_state"], "Pending")
-        app.button[0].click().run(timeout=30)
-        app.number_input[0].set_value(2.0).run(timeout=30)
+        next(button for button in app.button if button.label == "Approve reviewed quantity").click().run(timeout=30)
+        app.number_input(key="service_factor").set_value(2.0).run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         row = review_table(app).set_index("sku").loc["SNK-440"]
         self.assertEqual(row.manager_order_qty, 26)
         self.assertEqual(row.decision_state, "Pending")
-        self.assertTrue({"raw_sales_baseline", "stockout_adjustment", "estimated_lost_demand", "growth_factor"}.issubset(app.dataframe[1].value.columns))
+        self.assertTrue({"raw_sales_baseline", "stockout_adjustment", "estimated_lost_demand", "growth_factor"}.issubset(forecast_table(app).columns))
 
 
 if __name__ == "__main__":

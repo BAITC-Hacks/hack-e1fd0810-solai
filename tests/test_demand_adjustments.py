@@ -160,7 +160,7 @@ class DemandAdjustmentTests(unittest.TestCase):
         app.session_state["data_source"] = "Synthetic demo"
         app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
-        app.selectbox[1].select("SNK-440").run(timeout=30)
+        app.selectbox(key="selected_sku").select("SNK-440").run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         details = next(item.value for item in app.dataframe if "Calculation" in item.value)
         self.assertTrue({"baseline_demand", "anomaly_adjustment", "seasonal_adjustment",

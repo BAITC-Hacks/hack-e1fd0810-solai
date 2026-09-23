@@ -1,6 +1,23 @@
-﻿# Solai Warehouse Replenishment MVP
+﻿# SOLAI Inventory Intelligence
 
-A HackAlem demo that forecasts monthly SKU demand and proposes warehouse replenishment. Managers can inspect anomaly, stockout, seasonal and growth adjustments, review urgency, edit quantities and approve decisions. **Approval is a local demo decision: no supplier order is sent.**
+A HackAlem procurement decision workspace built on the existing monthly SKU forecasting and replenishment engine. Managers can inspect anomaly, stockout, seasonal and growth adjustments, review urgency, edit quantities and approve decisions. **Approval is a local demo decision: no supplier order is sent.**
+
+## Business problem and solution
+
+Procurement teams must distinguish regular demand from one-off purchases, censored sales during stockouts, seasonality and sustained growth. Sales totals alone cannot answer how much stock to order, which products need attention first, or which missing inputs make a decision unreliable.
+
+SOLAI combines partner-provided sales and inventory evidence with explainable forecasts, safety stock, supplier constraints and an explicit manager review workflow. The light interface uses an ivory background, restrained olive accents and readable status treatments. It does not replace the calculations with a visual mockup or an AI prediction service.
+
+## Workspace
+
+- **Overview:** KPIs for the full filtered selection, a transparent priority queue, data-quality counts, urgency distribution and lead-time coverage.
+- **Forecast:** observed demand, detected spikes, reconstructed demand, baseline/forecast levels and retained monthly/document audits.
+- **Replenishment:** a compact decision table, order quantities, selected-SKU details, structured explanations and source-versus-derived provenance.
+- **Warehouse:** calculated inventory/target comparison. No 3D component was present at implementation; no layout or storage coordinates are fabricated. `dashboard_views.warehouse(..., renderer=...)` accepts a teammate renderer with `recommendations` and `selected_sku`; `warehouse_selected_sku` also exposes the shared selection in session state.
+- **AI Copilot:** on-demand, evidence-grounded decision briefs and SKU analyses. Its exact behavior is documented below.
+- **Approvals:** read-only calculated quantities, separate manager edits, explicit approval, session decision history, supplier proposals and CSV export.
+
+Supplier, literal SKU/product search, urgency and status filters apply **before** 25-SKU pagination. KPIs, brief, supplier totals and complete export cover all filtered results. Only the visible page feeds detailed comparison tables/charts. The selected SKU is shared across tabs. Empty filters show an explicit empty state. Numeric nulls display as **Not available**, remaining null in the underlying data and exports; known zero remains zero.
 
 ## Installation, run and tests
 
@@ -48,7 +65,12 @@ Tests use Python unittest and Streamlit AppTest; pytest is not required. They co
 
 | File | Responsibility |
 | --- | --- |
-| `app.py` | Streamlit tables, Plotly charts, explanations, session-backed review and supplier views |
+| `app.py` | Existing application entry point, filters, shared selection, six-tab workspace and manager state orchestration |
+| `src/dashboard_data.py` | Cached calls to the existing partner/sample forecast and replenishment engines |
+| `src/dashboard_views.py` | Overview, forecast, decision detail, warehouse integration boundary, Copilot and approval views |
+| `src/presentation.py`, `.streamlit/config.toml` | Light design system, localized display helpers and missing-value formatting |
+| `src/decision_intelligence.py` | Pure, read-only portfolio facts, data quality, signals, priority ordering and SKU analysis |
+| `src/copilot.py` | Localized evidence briefs and optional constrained provider adapter |
 | `src/data_loader.py` | Synthetic CSV loading and basic validation |
 | `src/partner_loader.py` | Validated Excel adapters, 1C joins, document anomaly audit and inventory evidence |
 | `src/partner_pipeline.py` | Observed complete-month histories and explicit manager planning assumptions |
@@ -187,7 +209,7 @@ Zero forecast demand is LOW with coverage marked not applicable. Invalid demand,
 ## Manager review and approval
 
 1. Review **Replenishment Recommendations**, including urgency.
-2. Select a SKU under **Why this order?** and inspect the calculation and warnings.
+2. Select a SKU using the shared **SKU** selector and inspect **Why this recommendation?**, the provenance panel and warnings.
 3. Enter a nonnegative integer **Manager order quantity**. The algorithm's `recommended_order_qty` stays read-only; edits are stored as `manager_order_qty`.
 4. Click **Approve reviewed quantity** to approve that SKU's demo decision and record its quantity and UTC timestamp. Zero-quantity decisions are valid.
 
@@ -197,11 +219,13 @@ Streamlit session state preserves decisions across ordinary reruns and SKU switc
 
 ## Supplier grouping and export
 
-Brand/search filters and 25-SKU pagination prevent thousands of rows being rendered at once. Metrics, charts, proposals and exports are explicitly scoped to the current page. Workbook loading is cached by filename/size/modification time; page forecasts are cached by that fingerprint, SKU selection and planning lead time. Normal reruns do not reread Excel.
+Filters and 25-SKU pagination prevent thousands of rows being rendered at once. Source loading is cached by workbook filename/size/modification time and source-code version; full supplier forecasts and recommendations are cached separately. Changing language, page, search, urgency, status or opening a Copilot brief does not rerun engine calculations. Changing a planning lead time or service factor recalculates replenishment, reusing forecasts. A cold partner load and full supplier calculation can take substantially longer than a warm interaction; spinners report those operations. Cache entries are bounded in memory. Restart the server after engine implementation changes.
+
+Supplier totals and the full reviewed export cover **all filtered SKUs**, including products on other pages. Supplier detail previews show up to 50 lines, with a complete per-supplier CSV export. Product and review tables remain paginated; their native table exports contain only the displayed rows.
 
 Supplier proposals group positive manager-reviewed quantities, including Pending ones, and show original quantities, urgency, data-review status and approval state. Totals use reviewed quantity times latest unit price. Zero-quantity decisions remain visible in the review table. Summary metrics and charts above this section continue to show calculated quantities, not overrides.
 
-Use the download icon in a table's toolbar to export displayed columns as CSV. The review table exports original/edited quantities and decision states; supplier tables export proposal lines/totals. The explicit **Export reviewed recommendations (current page)** button includes full calculated adjustments, explanations, order constraints, original and reviewed quantities and approval state. A separate button exports the complete selected-SKU document audit. Manager quantities violating supplied constraints show a warning; the original compliant recommendation is preserved. There is no separate Excel generator or supplier dispatch integration.
+Use the download icon in a table's toolbar to export displayed columns as CSV. The review table exports original/edited quantities and decision states; supplier tables export proposal lines/totals. The explicit **Export reviewed recommendations (all filtered SKUs)** button includes full calculated adjustments, explanations, order constraints, original and reviewed quantities and approval state. A separate button exports the complete selected-SKU document audit. Manager quantities violating supplied constraints show a warning; the original compliant recommendation is preserved. There is no separate Excel generator or supplier dispatch integration.
 
 ## Assumptions and limitations
 
@@ -231,3 +255,47 @@ New product names are translated on demand with Google Cloud Translation Basic (
    ```
 
 Translation results are cached in the operating system's user cache directory (`%LOCALAPPDATA%\Solai\product_translations.sqlite3` on Windows, or `$XDG_CACHE_HOME/solai/product_translations.sqlite3` / `~/.cache/solai/product_translations.sqlite3` on Linux/macOS). The cache key is the original product name plus target language. [Google Cloud language support](https://cloud.google.com/translate/docs/languages) · [Translation Basic v2 API](https://cloud.google.com/translate/docs/reference/rest/v2/translate).
+
+
+## AI Procurement Copilot
+
+**Mode A is always available and requires no API key.** It is deterministic decision intelligence, not an external LLM or a new demand model. **Generate decision brief** produces portfolio counts, known recommended units, unknown quantity counts, up to five priority SKUs, supplier impact, explicit data risks and next actions from the current filtered calculation outputs. Unknown quantities are excluded from known totals; an entirely unknown total is unavailable, not zero.
+
+**Analyze SKU** exposes the actual forecast adjustments, inventory position, coverage, lead time, safety stock, target and order requirement, with RECOMMENDATION, RISK, DATA QUALITY and NEXT ACTION sections. Existing forecast/replenishment explanations remain accessible. Briefs and analyses have context fingerprints; changing the selection, calculation or language hides stale text until regenerated. Ordinary reruns preserve matching results.
+
+Quality is qualitative, not a probability:
+
+- **Review required:** any missing critical forecast/stock/transit/lead/order input, engine REVIEW status or review reasons.
+- **Limited data:** no above review flags, but fewer than six baseline observations, fewer than twelve variability observations, unavailable seasonality or unknown stockout metadata.
+- **Strong data:** none of those limitations. This is an evidence-completeness label, not a service or forecast-accuracy guarantee.
+
+The priority queue uses these visible rules in order: engine urgency; REVIEW first within urgency; shortest known on-hand coverage; positive calculated order requirement; SKU as deterministic tie-breaker. Unknown coverage follows known coverage within each urgency/review group. There is no opaque AI score.
+
+Key signals use existing growth, anomaly, stockout, coverage and MOQ outputs. Inventory above twice the calculated target is labelled precisely, not asserted to be obsolete. A declining-sales signal requires six consecutive clean recent months, at least four decreases and a last-three median at least 10% below the first-three median. It is explicitly observed sales, not seasonally adjusted, and does not change the forecast. Signals never infer an outage from missing data.
+
+### Optional real-model mode
+
+No LLM provider was configured during implementation. The app runs fully without one. To opt in, supply all three variables externally:
+
+- `SOLAI_LLM_ENDPOINT`: your HTTPS chat-completions-compatible endpoint.
+- `SOLAI_LLM_MODEL`: model identifier accepted by that provider.
+- `SOLAI_LLM_API_KEY`: provider credential. Never put secrets in source files or Git.
+
+The separate `TRANSLATION_API_KEY` is never reused for Copilot. Optional mode requires an explicit checkbox and button action. It sends only the generated evidence sentences, not raw workbooks or customer records. Supplier/SKU identifiers may appear in those sentences; enable it only for a provider you authorize to receive that business information.
+
+The provider must accept JSON `model`, `messages`, `temperature` and `max_tokens`, and return chat-completions-style `choices[0].message.content` containing a JSON object with `fact_ids`. For example, `{"fact_ids": ["F1", "F0"]}` selects sentences provided in the request. The real model chooses the emphasis and ordering of the explanation; the application renders only those exact verified sentences. Free-form model claims, unknown IDs, extra fields and duplicate IDs are rejected. This intentionally constrains LLM narration instead of pretending arbitrary generated prose is verified. A 10-second timeout and 64 KiB response limit protect responsiveness. Missing configuration, service errors and unverified responses retain the full deterministic brief. No model response can modify calculations, quantities or approval state.
+
+## Explainability and safety
+
+Source sales, stock, transit, product metadata, constraints and source timestamps remain distinct from derived baseline, adjustments, forecast, safety stock, target, quantity and urgency. Manager-entered lead time is explicitly an assumption. Raw documents and monthly reconciliation evidence remain available for audit. Unknown values are never silently changed to zero for presentation or intelligence.
+
+No supplier order is automatically sent. Approval is a local session decision, with no supplier dispatch integration. Existing business calculations and translation modules are reused; the new intelligence layer is read-only. This remains a decision-support MVP: approvals have no durable database or authentication, missing partner inputs still require confirmation, and optional LLM summaries are constrained evidence selections, not autonomous agents. Some technical audit/reason text remains in English even when localized navigation and core explanations use Russian or Kazakh.
+
+## Screenshots
+
+Add current validated captures here for submission:
+
+- Overview with active data source and filtered portfolio KPIs.
+- Replenishment detail showing source/derived provenance and urgency.
+- Copilot brief with calculated evidence and data-quality limitations.
+- Approval showing separate calculated/manager quantities and decision history.

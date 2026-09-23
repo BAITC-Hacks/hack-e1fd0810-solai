@@ -167,17 +167,17 @@ class ReplenishmentTests(unittest.TestCase):
         tables = [item.value for item in app.dataframe]
         recommendations = next(table for table in tables if "recommended_order_qty" in table and "target_stock" in table)
         self.assertEqual(len(recommendations), 8)
-        self.assertEqual(len(app.get("plotly_chart")), 3)
-        app.selectbox[1].select("SNK-440").run(timeout=30)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 3)
+        app.selectbox(key="selected_sku").select("SNK-440").run(timeout=30)
         self.assertEqual(len(app.exception), 0)
-        app.number_input[0].set_value(2.0).run(timeout=30)
+        app.number_input(key="service_factor").set_value(2.0).run(timeout=30)
         self.assertEqual(len(app.exception), 0)
         supplier_table = next(item.value for item in app.dataframe if "total_units" in item.value)
         self.assertGreater(supplier_table["total_units"].sum(), 0)
         metric_values = {item.label: item.value for item in app.metric}
         self.assertEqual(int(metric_values["Total units recommended"]), supplier_table["total_units"].sum())
         self.assertTrue(any("recommended replenishment quantity" in item.value for item in app.markdown))
-        self.assertEqual([button.label for button in app.button], ["Approve reviewed quantity"])
+        self.assertEqual([button.label for button in app.button], ["Generate decision brief", "Analyze SKU", "Approve reviewed quantity"])
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import unittest
 import numpy as np
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+from ui_helpers import forecast_table
 
 from src.partner_loader import (load_partner_data, normalize_monthly, detect_document_anomalies,
                                 infer_stockout_evidence, reconcile_document_sales)
@@ -162,20 +163,23 @@ class RealPartnerIntegrationTests(unittest.TestCase):
         app.run(timeout=120)
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(app.sidebar.selectbox[0].value, "Partner data")
-        self.assertEqual(len(app.dataframe[1].value), 25)
+        self.assertEqual(len(forecast_table(app)), 25)
         brand = next(w for w in app.sidebar.selectbox if w.label == "Supplier / brand")
         brand.select("Systeme Electric").run(timeout=60)
         next(w for w in app.sidebar.number_input if w.label == "Planning lead time (days)").set_value(60).run(timeout=60)
         self.assertEqual(len(app.exception), 0)
         table = next(t.value for t in app.dataframe if "raw_required_qty" in t.value and "urgency" in t.value)
-        self.assertTrue(table.recommended_order_qty.notna().any())
-        sku = app.selectbox[1].value
-        original = table.set_index("sku").loc[sku, "recommended_order_qty"]
+        self.assertTrue(pd.to_numeric(table.recommended_order_qty.astype(str).str.replace(",", "", regex=False), errors="coerce").notna().any())
+        sku = app.selectbox(key="selected_sku").value
+        original = pd.to_numeric(str(table.set_index("sku").loc[sku, "recommended_order_qty"]).replace(",", ""), errors="coerce")
         next(w for w in app.number_input if w.label == "Manager order quantity").set_value(20).run(timeout=60)
         next(w for w in app.button if w.label == "Approve reviewed quantity").click().run(timeout=60)
         self.assertEqual(len(app.exception), 0)
         def reviewed():
-            return next(t.value for t in app.dataframe if "decision_state" in t.value and "quantity_changed" in t.value)
+            result = next(t.value for t in app.dataframe if "decision_state" in t.value and "quantity_changed" in t.value).copy()
+            for column in ["manager_order_qty", "recommended_order_qty"]:
+                result[column] = pd.to_numeric(result[column].astype(str).str.replace(",", "", regex=False), errors="coerce")
+            return result
         row = reviewed().set_index("sku").loc[sku]
         self.assertEqual(row.manager_order_qty, 20)
         self.assertEqual(row.decision_state, "Approved")
@@ -185,7 +189,7 @@ class RealPartnerIntegrationTests(unittest.TestCase):
         next(w for w in app.sidebar.selectbox if w.label == "Results page (25 SKUs)").select(1).run(timeout=60)
         self.assertEqual(reviewed().set_index("sku").loc[sku, "decision_state"], "Approved")
         self.assertTrue(any("No supplier order was sent" in item.value for item in app.success))
-        self.assertTrue({"raw_sales_baseline", "stockout_adjustment", "growth_factor", "estimated_lost_demand"}.issubset(app.dataframe[1].value.columns))
+        self.assertTrue({"raw_sales_baseline", "stockout_adjustment", "growth_factor", "estimated_lost_demand"}.issubset(forecast_table(app).columns))
 
 
 if __name__ == "__main__":
