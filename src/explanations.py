@@ -1,59 +1,40 @@
 """Human-readable explanations generated only from calculated SKU values."""
 
 import pandas as pd
+from src.translations import TRANSLATIONS
 
 from src.forecasting import explain_forecast
 
 
-def explain_replenishment(row: pd.Series) -> str:
+def explain_replenishment(row: pd.Series, language: str = "en") -> str:
     """Explain formulas, fallback, adjustments and review conditions."""
-    parts = [f"Forecast demand is {row['forecast_demand']} units/month."]
+    tr = TRANSLATIONS.get(language, TRANSLATIONS["en"])
+    parts = [tr["ex_r1"].format(value=row["forecast_demand"])]
     if "growth_factor" in row:
-        parts.append(explain_forecast(row))
+        parts.append(explain_forecast(row, language))
     if pd.notna(row["recommended_order_qty"]):
         parts.append(
-            f"Daily demand is forecast / 30 = {row['daily_demand']:.2f} units/day. "
-            f"Supplier lead time is {row['lead_time_days']} days, requiring "
-            f"{row['daily_demand']:.2f} × {row['lead_time_days']} = "
-            f"{row['lead_time_demand']:.2f} units during lead time."
+            tr["ex_daily"].format(daily=row["daily_demand"], days=row["lead_time_days"], lead=row["lead_time_demand"])
         )
         parts.append(
-            f"Safety stock is {row['service_level_factor']:.2f} × "
-            f"{row['monthly_demand_std']:.2f} × sqrt({row['lead_time_days']} / 30) "
-            f"= {row['safety_stock']:.2f} units. "
-            f"The monthly variability estimate uses {row['history_observations']} "
-            "non-anomalous, non-stockout observations; greater variability increases safety stock."
+            tr["ex_safety"].format(factor=row["service_level_factor"], std=row["monthly_demand_std"], days=row["lead_time_days"], stock=row["safety_stock"], n=row["history_observations"])
         )
         parts.append(
-            f"Current stock is {row['current_stock']} units and {row['in_transit']} "
-            f"units are in transit, giving an inventory position of {row['inventory_position']:.2f}. "
-            f"Target stock is {row['lead_time_demand']:.2f} + {row['safety_stock']:.2f} "
-            f"= {row['target_stock']:.2f}. "
-            f"Raw need is {row['target_stock']:.2f} − {row['inventory_position']:.2f} "
-            f"= {row['raw_order_qty']:.2f}. "
-            f"The recommended replenishment quantity is {int(row['recommended_order_qty'])} units "
-            "(raw need rounded up, with a minimum of zero). Calculations use unrounded values."
+            tr["ex_inventory"].format(current=row["current_stock"], transit=row["in_transit"], position=row["inventory_position"], lead=row["lead_time_demand"], safety=row["safety_stock"], target=row["target_stock"], raw=row["raw_order_qty"], qty=int(row["recommended_order_qty"]))
         )
         if row["recommended_order_qty"] == 0:
-            parts.append("No order is recommended because current stock plus in-transit inventory meets or exceeds target stock.")
+            parts.append(tr["ex_zero"])
     else:
-        parts.append("A reliable order quantity cannot be calculated from the supplied inputs; no quantity is proposed.")
+        parts.append(tr["ex_unavailable"])
     if row["safety_stock_method"] == "fallback_100pct_monthly":
-        parts.append(
-            "Insufficient-history fallback: fewer than three clean monthly observations are available. "
-            "Monthly variability is set to the larger of forecast demand and the clean historical mean "
-            "(a conservative 100% variability assumption). Manager review is required."
-        )
-    parts.append(
-        f"{int(row['anomalies_detected'])} sales anomaly/anomalies were detected by Phase 1; "
-        f"{int(row['anomalies_excluded'])} flagged observation(s) in the variability window "
-        "were excluded from safety-stock estimation and retained for audit."
-    )
+        parts.append(tr["ex_fallback"])
+    parts.append(tr["ex_anomaly"].format(detected=int(row["anomalies_detected"]), excluded=int(row["anomalies_excluded"])))
     if row["seasonal_factor"] != 1:
-        parts.append(f"Phase 1 already applied a seasonal factor of {row['seasonal_factor']:.4f} to demand; it is not applied again here.")
+        parts.append(tr["ex_seasonal_applied"].format(factor=row["seasonal_factor"]))
     if row.get("stockout_observations_excluded", 0):
-        parts.append(f"{int(row['stockout_observations_excluded'])} stockout period(s) were excluded from safety-stock variability; imputed demand is not treated as observed variability.")
+        parts.append(tr.get("ex_stockout_excluded", TRANSLATIONS["en"]["ex_stockout_excluded"]).format(n=int(row["stockout_observations_excluded"])))
     if row["status"] == "REVIEW":
-        parts.append(f"REVIEW required: {row['review_reasons'].replace(';', ', ').replace('_', ' ')}. Any calculated quantity is provisional.")
-    parts.append("This is a proposal for manager review only. No supplier order is sent.")
+        reasons = row["review_reasons"].replace(";", ", ").replace("_", " ")
+        parts.append(tr["ex_review"].format(reasons=reasons))
+    parts.append(tr["ex_proposal"])
     return " ".join(parts)

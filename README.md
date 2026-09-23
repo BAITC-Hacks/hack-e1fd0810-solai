@@ -48,3 +48,17 @@ streamlit run app.py
 ```
 
 Streamlit will open the dashboard in your browser. It shows the sample sales history and inventory data; it does not create or send supplier orders.
+
+## Automatic product-name translation
+
+New product names are translated on demand with Google Cloud Translation Basic (v2). Russian and Kazakh (`kk`) are supported. The translation API key is read from the `TRANSLATION_API_KEY` environment variable; if it is missing or a request fails, the dashboard displays the original name. No extra Python package is needed.
+
+1. In a billing-enabled Google Cloud project, enable the Cloud Translation API and create an API key restricted to that API.
+2. Set the key in the shell where Streamlit will run. PowerShell example:
+
+   ```powershell
+   $env:TRANSLATION_API_KEY = "YOUR_GOOGLE_CLOUD_TRANSLATION_API_KEY"
+   .venv\Scripts\python.exe -m streamlit run app.py
+   ```
+
+Translation results are cached in the operating system's user cache directory (`%LOCALAPPDATA%\Solai\product_translations.sqlite3` on Windows, or `$XDG_CACHE_HOME/solai/product_translations.sqlite3` / `~/.cache/solai/product_translations.sqlite3` on Linux/macOS). The cache key is the original product name plus target language. [Google Cloud language support](https://cloud.google.com/translate/docs/languages) · [Translation Basic v2 API](https://cloud.google.com/translate/docs/reference/rest/v2/translate).

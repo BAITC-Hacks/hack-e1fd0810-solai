@@ -1,6 +1,7 @@
 """Explainable next-month demand forecasts for monthly SKU sales histories."""
 
 import pandas as pd
+from src.translations import TRANSLATIONS
 
 from src.anomaly_detection import detect_sales_anomalies
 from src.demand_adjustments import compensate_stockouts, detect_sustainable_growth
@@ -109,37 +110,44 @@ def forecast_demand(data: pd.DataFrame, recent_months: int = 6):
     return pd.DataFrame(rows, columns=SUMMARY_COLUMNS), audit
 
 
-def explain_forecast(row: pd.Series) -> str:
-    """Describe the calculated evidence for a selected SKU."""
-    text = (
-        f"Regular demand is the median of {int(row['baseline_observations'])} "
-        f"non-anomalous monthly demand estimates after stockout compensation: {row['baseline_demand']:.1f} units. "
-        f"{int(row['baseline_anomalies_excluded'])} unusual sales spike(s) were excluded "
-        "from the recent baseline calculation and retained in the audit history. "
+def explain_forecast(row: pd.Series, language: str = "en") -> str:
+    """Describe calculated evidence without changing any forecast values."""
+    tr = TRANSLATIONS.get(language, TRANSLATIONS["en"])
+    text = tr["ex_f1"].format(
+        n=int(row["baseline_observations"]), value=row["baseline_demand"],
+        excluded=int(row["baseline_anomalies_excluded"]),
     )
-    text += (
-        f"Raw-sales baseline after robust spike handling: {row['raw_sales_baseline']:.1f} units. "
-        f"Stockout compensation adds {row['stockout_adjustment']:.1f} units to this baseline. "
-        f"{int(row['stockout_periods'])} stockout period(s) imply {row['estimated_lost_demand']:.1f} "
-        "estimated lost units across the history; these are estimates, not observed sales. "
+    text += tr.get("ex_stockout", TRANSLATIONS["en"]["ex_stockout"]).format(
+        sales=row["raw_sales_baseline"], adjustment=row["stockout_adjustment"],
+        periods=int(row["stockout_periods"]), lost=row["estimated_lost_demand"],
     )
     if row["stockout_unresolved"] or row["stockout_fallback_periods"]:
-        text += (f"Stockout estimates need review: {int(row['stockout_unresolved'])} unresolved period(s), "
-                 f"{int(row['stockout_fallback_periods'])} period(s) using limited-history fallback. ")
+        text += tr.get("ex_stockout_review", TRANSLATIONS["en"]["ex_stockout_review"]).format(
+            unresolved=int(row["stockout_unresolved"]), fallback=int(row["stockout_fallback_periods"]),
+        )
     if row["stockout_metadata_missing"]:
-        text += "Some stockout metadata is unavailable; no stockout was inferred for those rows. "
+        text += tr.get("ex_stockout_missing", TRANSLATIONS["en"]["ex_stockout_missing"])
     if row["seasonal_source"] == "none":
-        text += "There is insufficient reliable seasonal history; the seasonal factor is 1.00. "
+        text += tr["ex_no_season"]
     else:
         change = (row["seasonal_factor"] - 1) * 100
-        direction = "increases" if change >= 0 else "decreases"
-        text += (f"Seasonality from {row['seasonal_source']} history {direction} "
-                 f"the forecast by {abs(change):.1f}% relative to recent months. ")
+        direction = tr["direction_up"] if change >= 0 else tr["direction_down"]
+        source = {"sku": tr.get("source_sku", "SKU"), "category": tr.get("source_category", "category")}.get(row["seasonal_source"], row["seasonal_source"])
+        text += tr["ex_season"].format(source=source, direction=direction, change=abs(change))
     if row["growth_detected"]:
-        text += (f"Sustainable growth is supported by {int(row['growth_observations'])} clean months. "
-                 f"Growth increases the seasonal forecast by {(row['growth_factor'] - 1) * 100:.1f}% "
-                 f"({row['growth_adjustment']:.1f} units; uplift capped at 50%). ")
+        text += tr.get("ex_growth", TRANSLATIONS["en"]["ex_growth"]).format(
+            n=int(row["growth_observations"]), change=(row["growth_factor"] - 1) * 100,
+            adjustment=row["growth_adjustment"],
+        )
     else:
-        text += f"No growth uplift applied: {row['growth_reason'].replace('_', ' ')}. "
-    return text + (f"Forecast for {row['forecast_month']:%B %Y}: "
-                   f"{row['forecast_demand']:.1f} units. The final decision remains with the manager.")
+        text += tr.get("ex_no_growth", TRANSLATIONS["en"]["ex_no_growth"]).format(
+            reason=row["growth_reason"].replace("_", " "),
+        )
+    month = row["forecast_month"].strftime("%B %Y")
+    if language in {"ru", "kz"}:
+        month_names = {
+            "ru": ["??????", "???????", "?????", "??????", "???", "????", "????", "???????", "????????", "???????", "??????", "???????"],
+            "kz": ["??????", "?????", "??????", "?????", "?????", "??????", "?????", "?????", "????????", "?????", "??????", "?????????"],
+        }
+        month = f"{month_names[language][row['forecast_month'].month - 1]} {row['forecast_month'].year}"
+    return text + tr["ex_forecast"].format(month=month, value=row["forecast_demand"])
